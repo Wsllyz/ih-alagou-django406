@@ -1,0 +1,219 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="{% static 'home/css/style.css' %}">
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        #map {
+            height: 1920px;
+            width: 100%;
+        }
+        .hidden {
+            display: none;
+        }
+        .visible {
+            display: block;
+        }
+        #cardDiv {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: white;
+            padding: 10px;
+            border: 1px solid black;
+        }
+        #termometro {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 50% ;
+}
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <!-- div do card-->
+    <div id="cardDiv" class="hidden">
+        <div id="painel">
+            <h2>Av. Gov. Agamenon Magalhães</h2>
+            <p>Índice de alagamento:</p>
+            <div id="termometro">
+                <img src="{% static 'home/css/src/termometroVermelho.png' %}" id="imagemTermometro" alt="termometro que indica temperatura">
+            </div>
+            </div>
+            <div class="caixa">
+                <div id="detalhes">
+                    <p id="det"> Detalhes da situação atual</p>
+                    <p color id="nivel-chuva">Chuva intensa</p>
+                    <p>Distância da água: <span id="nivel-agua"></span>cm</p>
+                    <p id="msg"></p>
+                </div>
+            </div>
+            <div id="chart">
+                <p>Gráfico das últimas 12 horas:</p>
+                <canvas id="grafico"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var map = L.map('map').setView([-8.0526073, -34.8845963], 19);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        var icone = L.icon({
+            iconUrl: "{% static 'home/css/src/pontoVerde.png' %}",
+            iconSize: [40, 50],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -32]
+        });
+        var marker = L.marker([-8.0526073, -34.8845963], {icon: icone}).addTo(map);
+
+        const ctx = document.getElementById('grafico').getContext('2d');
+        var grafico = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array.from({length: 12}, (_, i) => i + 1),
+                datasets: [{
+                    label: 'Nível de Água (cm)',
+                    data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    borderColor: 'blue',
+                    borderWidth: 2,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Horas'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Nível de Água (cm)'
+                        }
+                    }
+                }
+            }
+        });
+
+        pegarDistancia();
+        setInterval(pegarDistancia, 30000);
+
+        // Função que chama select_distancia_view, pega a lista com a distância dos registros e atualiza o gráfico
+        async function pegar_lista_leituras() {
+            try {
+                const response = await fetch("{% url 'select_lista_leituras_view' %}");
+
+                if (!response.ok) {
+                    throw new Error('Erro na requisição: ' + response.statusText);
+                }
+
+                const data = await response.json();
+                const listaLeituras = data.listaLeituras;
+
+                if (listaLeituras.length > 0) {
+                    atualizaGrafico(listaLeituras);
+                }
+                atualizarCard();
+            } catch (error) {
+                console.error('Erro ao pegar lista de leituras:', error);
+            }
+        }
+
+
+        // Função que chama distancia_view, pega o valor da distância a partir do object retornado e executa a função atualizar()
+        function pegarDistancia() {
+            $.ajax({
+                url: "{% url 'distancia_view' %}",
+                type: "GET",
+                success: function(data) {
+                    distancia = data.distancia;
+                    atualizarIcone();
+                }
+            });
+        }
+        // Função que atualiza a cor do ícone
+        function atualizarIcone() {
+            if (distancia > 240) {
+                cor = "{% static 'home/css/src/pontoVermelho.png' %}";
+            } else if (distancia > 180) {
+                cor = "{% static 'home/css/src/pontoLaranja.png' %}";
+            } else if (distancia > 120) {
+                cor = "{% static 'home/css/src/pontoAmarelo.png' %}";
+            } else if (distancia > 60) {
+                cor = "{% static 'home/css/src/pontoCiano.png' %}";
+            } else {
+                cor = "{% static 'home/css/src/pontoVerde.png' %}";
+            }
+            icone = L.icon({
+            iconUrl: cor,
+            iconSize: [40, 50],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -32]
+        });
+            if (marker) {
+                map.removeLayer(marker);
+            }
+            marker = L.marker([-8.0526073, -34.8845963], {icon: icone}).addTo(map);
+            
+            marker.on('click', function() {
+            var cardDiv = document.getElementById('cardDiv');
+            if (cardDiv.classList.contains('hidden')) {
+                pegar_lista_leituras();
+                cardDiv.classList.remove('hidden');
+                cardDiv.classList.add('visible');
+            } else {
+                cardDiv.classList.remove('visible');
+                cardDiv.classList.add('hidden');
+            }
+        });
+        }
+
+
+        //função que atualiza as informações do card
+        //Precisa corrigir a forma de verificar o nível de chuva. Calcular baseado no nível da água não faz sentido
+        function atualizarCard() {
+            if (distancia > 240) {
+                document.getElementById("msg").textContent = 'Área totalmente alagada. Evite ou tome as medidas de precaução adequadas';
+                document.getElementById("nivel-chuva").textContent = 'Chuva intensa';
+                imagemTermometro.setAttribute("src", "{% static 'home/css/src/termometroVermelho.png' %}");
+            } else if (distancia > 180) {
+                document.getElementById("msg").textContent = 'Área com alto nível de alagamento. Evite ou tome medidas de precaução adequadas.';
+                document.getElementById("nivel-chuva").textContent = 'Chuva intensa';
+                imagemTermometro.setAttribute("src", "{% static 'home/css/src/termometroAmarelo.png' %}");
+            } else if (distancia > 120) {
+                document.getElementById("msg").textContent = 'Área bastante alagada. Evite ou tome medidas de precaução adequadas.';
+                document.getElementById("nivel-chuva").textContent = 'Chuva intensa';
+                imagemTermometro.setAttribute("src", "{% static 'home/css/src/termometroLaranja.png' %}");
+            } else if (distancia > 60) {
+                document.getElementById("msg").textContent = 'Área levemente alagada.';
+                document.getElementById("nivel-chuva").textContent = 'Chuva intensa';
+                imagemTermometro.setAttribute("src", "{% static 'home/css/src/termometroVerdeEscuro.png' %}");
+            } else {
+                document.getElementById("msg").textContent = 'Área com baixo nível de alagamento.';
+                document.getElementById("nivel-chuva").textContent = 'Chuva intensa';
+                imagemTermometro.setAttribute("src", "{% static 'home/css/src/termometroVerdeClaro.png' %}");
+            }
+            document.getElementById("nivel-agua").textContent = `${distancia}`;
+        }
+
+        function atualizaGrafico(listaLeituras) {
+            grafico.data.datasets[0].data = listaLeituras;
+            grafico.update();
+        }
+    </script>
+</body>
+</html>
